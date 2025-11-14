@@ -1,0 +1,5 @@
+{
+  "name": "Copy of 3D Print Queue Manager",
+  "description": "A Kanban-style web application to manage a queue of 3D printing requests, designed with a Heineken-inspired theme. It features role-based access for users and administrators, drag-and-drop functionality for managing task status, and an AI-powered assistant to suggest optimal printing materials and settings.",
+  "requestFramePermissions": []
+}
