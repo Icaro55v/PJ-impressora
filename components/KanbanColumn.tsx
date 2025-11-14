@@ -1,9 +1,7 @@
 import React from 'react';
 import { Task, UserRole, TaskStatus } from '../types';
 import TaskCard from './TaskCard';
-// FIX: Use a default import and destructure the component to avoid SyntaxError.
-import SortableJS from 'react-sortablejs';
-const { ReactSortable } = SortableJS;
+import { ReactSortable } from 'react-sortablejs';
 
 
 interface KanbanColumnProps {
@@ -17,6 +15,9 @@ interface KanbanColumnProps {
 
 const KanbanColumn: React.FC<KanbanColumnProps> = ({ column, tasks, userRole, onEditTask, onDeleteTask, onColumnChange }) => {
     
+    // Create a new list of tasks with stable IDs for SortableJS
+    const taskList = tasks.map(t => ({...t, id: t.id}));
+
     const onDrop = (evt: any) => {
         const taskId = evt.item.dataset.taskId;
         if(taskId) {
@@ -24,7 +25,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({ column, tasks, userRole, on
         }
     };
     
-    // SortableJS requires a state setter, but we handle state update via onColumnChange.
+    // SortableJS requires a state setter, but we handle state updates via onColumnChange.
     // We provide a dummy setter and manage the list immutably.
     const setTaskList = () => {};
 
@@ -40,7 +41,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({ column, tasks, userRole, on
                 </span>
             </div>
             <ReactSortable
-                list={tasks}
+                list={taskList}
                 setList={setTaskList}
                 group="kanban"
                 animation={150}

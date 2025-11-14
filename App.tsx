@@ -1,11 +1,10 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
-import { Task, User, UserRole, TaskStatus } from './types';
+import { Task, User, Priority, TaskStatus } from './types';
 import Header from './components/Header';
 import KanbanBoard from './components/KanbanBoard';
 import TaskModal from './components/TaskModal';
 import DeleteModal from './components/DeleteModal';
-import { initialTasks, mockUser, mockAdmin } from './constants';
+import { auth, db, appId } from './firebase';
 
 const App: React.FC = () => {
     const [loading, setLoading] = useState<boolean>(true);
@@ -20,25 +19,51 @@ const App: React.FC = () => {
     const [taskToDeleteId, setTaskToDeleteId] = useState<string | null>(null);
     
     useEffect(() => {
-        // Simulate fetching user and tasks
-        setTimeout(() => {
-            setUser(mockAdmin); // Start as admin by default
-            setTasks(initialTasks);
-            setLoading(false);
-        }, 500);
-    }, []);
+        const unsubscribeAuth = auth.onAuthStateChanged(async (firebaseUser) => {
+            if (firebaseUser) {
+                const userRef = db.ref(`/artifacts/${appId}/users/${firebaseUser.uid}`);
+                const snapshot = await userRef.once('value');
+                const dbUser = snapshot.val();
 
-    const handleRoleChange = (newRole: UserRole) => {
-        setUser(newRole === 'admin' ? mockAdmin : mockUser);
-    };
+                const currentUser: User = {
+                    uid: firebaseUser.uid,
+                    email: firebaseUser.email || '',
+                    name: firebaseUser.email?.split('@')[0] || 'Utilizador',
+                    role: dbUser?.role || 'user',
+                };
+                setUser(currentUser);
+
+                const tasksRef = db.ref(`/artifacts/${appId}/public/data/allPrintJobs`);
+                tasksRef.on('value', (snapshot) => {
+                    const tasksData = snapshot.val();
+                    const tasksList: Task[] = [];
+                    if (tasksData) {
+                        for (const id in tasksData) {
+                            tasksList.push({ id, ...tasksData[id] });
+                        }
+                    }
+                    setTasks(tasksList);
+                    setLoading(false);
+                }, (error) => {
+                    console.error("Firebase read failed:", error);
+                    alert("Não foi possível carregar os pedidos.");
+                    setLoading(false);
+                });
+
+            } else {
+                window.location.href = 'login.html';
+            }
+        });
+
+        return () => {
+            unsubscribeAuth();
+            const tasksRef = db.ref(`/artifacts/${appId}/public/data/allPrintJobs`);
+            tasksRef.off();
+        };
+    }, []);
     
     const handleLogout = () => {
-        setLoading(true);
-        setUser(null);
-        // In a real app, you would redirect to a login page
-        setTimeout(() => {
-            alert("Você foi desconectado. Atualize a página para simular o login novamente.");
-        }, 300);
+        auth.signOut();
     };
 
     const openAddTaskModal = useCallback(() => {
@@ -69,34 +94,32 @@ const App: React.FC = () => {
     }, []);
     
     const handleSaveTask = (taskData: Omit<Task, 'id' | 'createdAt' | 'createdBy' | 'column'> & { id?: string }) => {
+        const tasksRef = db.ref(`/artifacts/${appId}/public/data/allPrintJobs`);
+        
         if (taskData.id) { // Editing existing task
-            setTasks(prevTasks => prevTasks.map(t => t.id === taskData.id ? { ...t, ...taskData } : t));
+            const { id, ...dataToUpdate } = taskData;
+            tasksRef.child(id).update(dataToUpdate);
         } else { // Adding new task
-            const newTask: Task = {
+            const newTaskData = {
                 ...taskData,
-                id: `task-${Date.now()}`,
-                createdAt: Date.now(),
+                createdAt: window.firebase.database.ServerValue.TIMESTAMP,
                 createdBy: user!.uid,
-                column: 'col-pendente',
-                priority: user?.role === 'admin' ? taskData.priority : '2',
+                column: 'col-pendente' as TaskStatus,
+                priority: user?.role === 'admin' ? taskData.priority : '2' as Priority,
             };
-            setTasks(prevTasks => [newTask, ...prevTasks]);
+            tasksRef.push(newTaskData);
         }
         closeTaskModal();
     };
 
     const handleDeleteTask = () => {
         if (!taskToDeleteId) return;
-        setTasks(prevTasks => prevTasks.filter(t => t.id !== taskToDeleteId));
+        db.ref(`/artifacts/${appId}/public/data/allPrintJobs/${taskToDeleteId}`).remove();
         closeDeleteModal();
     };
 
     const handleTaskColumnChange = useCallback((taskId: string, newColumn: TaskStatus) => {
-        setTasks(prevTasks =>
-            prevTasks.map(task =>
-                task.id === taskId ? { ...task, column: newColumn } : task
-            )
-        );
+        db.ref(`/artifacts/${appId}/public/data/allPrintJobs/${taskId}/column`).set(newColumn);
     }, []);
 
     if (loading) {
@@ -114,11 +137,7 @@ const App: React.FC = () => {
     }
 
     if (!user) {
-         return (
-             <div className="flex items-center justify-center h-screen bg-gray-100">
-                <p>Simulação de logout. Por favor, atualize a página.</p>
-             </div>
-        );
+         return null; // Should be redirected by useEffect
     }
 
     const visibleTasks = user.role === 'admin' 
@@ -133,7 +152,6 @@ const App: React.FC = () => {
                 onAddTask={openAddTaskModal}
                 sortMethod={sortMethod}
                 onSortChange={setSortMethod}
-                onRoleChange={handleRoleChange}
             />
             <main className="flex-grow">
                  <KanbanBoard 
